@@ -158,7 +158,14 @@ async fn main() -> Result<()> {
     // Create the application routes
     let app = Router::new()
         .route("/eegrandomforestprediction", post(post_predict))
+        .route("/prediction", post(egg_prediction))
         .route("/lastpredition", get(last_prediction))
+        .route("/takeoff", post(takeoff))
+        .route("/land", post(land))
+        .route("/forward", post(forward))
+        .route("/backward", post(backward))
+        .route("/left", post(left))
+        .route("/rigth", post(right))
         .route("/imateapot", get(im_a_teapot))
         .with_state(state);
 
@@ -172,9 +179,336 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// The only end point that matters
+/// The only end point that matters.
+///
+/// This function is an asynchronous handler that always returns the "I'm a teapot" status code.
+/// HTTP 418 status code, which is defined in the Hyper Text Coffee Pot Control Protocol (HTCPCP) as a way to indicate that the server is a teapot and cannot brew coffee.
+///
+/// # Returns
+///
+/// * `StatusCode` - The "I'm a teapot" status code (HTTP 418).
+///
+/// # References
+///
+/// - [Hyper Text Coffee Pot Control Protocol (HTCPCP)](https://tools.ietf.org/html/rfc2324)
+/// - [HTTP 418 Status Code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/418)
 async fn im_a_teapot() -> StatusCode {
     StatusCode::IM_A_TEAPOT
+}
+
+/// Handles the "takeoff" prediction request.
+///
+/// This function is an asynchronous handler for the "takeoff" prediction endpoint.
+/// It adds the "takeoff" prediction to the shared state and returns a response
+/// containing the prediction label and the updated count of predictions.
+///
+/// # Arguments
+///
+/// * `state` - The shared application state.
+/// * `_` - The JSON value (unused in this function).
+///
+/// # Returns
+///
+/// * `Result<Json<PredictionResponse>, StatusCode>` - A `Result` containing the JSON response
+///   with the prediction label and count on success, or a `StatusCode` indicating an error.
+///
+/// # Errors
+///
+/// * `StatusCode::BAD_REQUEST` - Returned if there is an error acquiring the lock on the predictions state.
+async fn takeoff(
+    state: State<AppState>,
+    Json(_): Json<Value>,
+) -> Result<Json<PredictionResponse>, StatusCode> {
+    state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .push(String::from("takeoff"));
+
+    // Get the current count of predictions
+    let prediction_count = state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .len();
+    Ok(PredictionResponse {
+        prediction_label: "takeoff".into(),
+        prediction_count,
+    }
+    .into())
+}
+
+/// Handles the "land" prediction request.
+///
+/// This function is an asynchronous handler for the "land" prediction endpoint.
+/// It adds the "land" prediction to the shared state and returns a response
+/// containing the prediction label and the updated count of predictions.
+///
+/// # Arguments
+///
+/// * `state` - The shared application state.
+/// * `_` - The JSON value (unused in this function).
+///
+/// # Returns
+///
+/// * `Result<Json<PredictionResponse>, StatusCode>` - A `Result` containing the JSON response
+///   with the prediction label and count on success, or a `StatusCode` indicating an error.
+///
+/// # Errors
+///
+/// * `StatusCode::BAD_REQUEST` - Returned if there is an error acquiring the lock on the predictions state.
+async fn land(
+    state: State<AppState>,
+    Json(_): Json<Value>,
+) -> Result<Json<PredictionResponse>, StatusCode> {
+    state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .push(String::from("land"));
+
+    // Get the current count of predictions
+    let prediction_count = state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .len();
+    Ok(PredictionResponse {
+        prediction_label: "land".into(),
+        prediction_count,
+    }
+    .into())
+}
+
+/// Handles the "forward" prediction request.
+///
+/// This function is an asynchronous handler for the "forward" prediction endpoint.
+/// It adds the "forward" prediction to the shared state and returns a response
+/// containing the prediction label and the updated count of predictions.
+///
+/// # Arguments
+///
+/// * `state` - The shared application state.
+/// * `_` - The JSON value (unused in this function).
+///
+/// # Returns
+///
+/// * `Result<Json<PredictionResponse>, StatusCode>` - A `Result` containing the JSON response
+///   with the prediction label and count on success, or a `StatusCode` indicating an error.
+///
+/// # Errors
+///
+/// * `StatusCode::BAD_REQUEST` - Returned if there is an error acquiring the lock on the predictions state.
+async fn forward(
+    state: State<AppState>,
+    Json(_): Json<Value>,
+) -> Result<Json<PredictionResponse>, StatusCode> {
+    state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .push(String::from("forward"));
+
+    // Get the current count of predictions
+    let prediction_count = state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .len();
+    Ok(PredictionResponse {
+        prediction_label: "forward".into(),
+        prediction_count,
+    }
+    .into())
+}
+
+/// Handles the "backward" prediction request.
+///
+/// This function is an asynchronous handler for the "backward" prediction endpoint.
+/// It adds the "backward" prediction to the shared state and returns a response
+/// containing the prediction label and the updated count of predictions.
+///
+/// # Arguments
+///
+/// * `state` - The shared application state.
+/// * `_` - The JSON value (unused in this function).
+///
+/// # Returns
+///
+/// * `Result<Json<PredictionResponse>, StatusCode>` - A `Result` containing the JSON response
+///   with the prediction label and count on success, or a `StatusCode` indicating an error.
+///
+/// # Errors
+///
+/// * `StatusCode::BAD_REQUEST` - Returned if there is an error acquiring the lock on the predictions state.
+async fn backward(
+    state: State<AppState>,
+    Json(_): Json<Value>,
+) -> Result<Json<PredictionResponse>, StatusCode> {
+    state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .push(String::from("backward"));
+
+    // Get the current count of predictions
+    let prediction_count = state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .len();
+    Ok(PredictionResponse {
+        prediction_label: "backward".into(),
+        prediction_count,
+    }
+    .into())
+}
+
+/// Handles the "right" prediction request.
+///
+/// This function is an asynchronous handler for the "right" prediction endpoint.
+/// It adds the "right" prediction to the shared state and returns a response
+/// containing the prediction label and the updated count of predictions.
+///
+/// # Arguments
+///
+/// * `state` - The shared application state.
+/// * `_` - The JSON value (unused in this function).
+///
+/// # Returns
+///
+/// * `Result<Json<PredictionResponse>, StatusCode>` - A `Result` containing the JSON response
+///   with the prediction label and count on success, or a `StatusCode` indicating an error.
+///
+/// # Errors
+///
+/// * `StatusCode::BAD_REQUEST` - Returned if there is an error acquiring the lock on the predictions state.
+async fn right(
+    state: State<AppState>,
+    Json(_): Json<Value>,
+) -> Result<Json<PredictionResponse>, StatusCode> {
+    state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .push(String::from("right"));
+
+    // Get the current count of predictions
+    let prediction_count = state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .len();
+    Ok(PredictionResponse {
+        prediction_label: "right".into(),
+        prediction_count,
+    }
+    .into())
+}
+
+/// Handles the "left" prediction request.
+///
+/// This function is an asynchronous handler for the "left" prediction endpoint.
+/// It adds the "left" prediction to the shared state and returns a response
+/// containing the prediction label and the updated count of predictions.
+///
+/// # Arguments
+///
+/// * `state` - The shared application state.
+/// * `_` - The JSON value (unused in this function).
+///
+/// # Returns
+///
+/// * `Result<Json<PredictionResponse>, StatusCode>` - A `Result` containing the JSON response
+///   with the prediction label and count on success, or a `StatusCode` indicating an error.
+///
+/// # Errors
+///
+/// * `StatusCode::BAD_REQUEST` - Returned if there is an error acquiring the lock on the predictions state.
+async fn left(
+    state: State<AppState>,
+    Json(_): Json<Value>,
+) -> Result<Json<PredictionResponse>, StatusCode> {
+    state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .push(String::from("left"));
+
+    // Get the current count of predictions
+    let prediction_count = state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .len();
+    Ok(PredictionResponse {
+        prediction_label: "left".into(),
+        prediction_count,
+    }
+    .into())
+}
+
+/// Handles the prediction request when the input data is stored in vectors.
+///
+/// This function is a handler for the prediction endpoint.
+/// It expects the input data to be provided as a JSON object containing vectors.
+/// The function converts the JSON data to a DataFrame, prepares the input tensor,
+/// and makes a prediction using the loaded TensorFlow model. The prediction is then
+/// added to the shared state, and the response is returned as a JSON value.
+///
+/// # Arguments
+///
+/// * `state` - The shared application state containing the TensorFlow session, graph, and other resources.
+/// * `json` - The JSON value containing the input data for the prediction.
+///
+/// # Returns
+///
+/// * `Result<Json<PredictionResponse>, StatusCode>` - A `Result` containing the JSON response
+///   with the prediction label and count on success, or a `StatusCode` indicating an error.
+///
+/// # Errors
+///
+/// * `StatusCode::BAD_REQUEST` - Returned if there is an error during the prediction process,
+///   such as invalid input data or an error in the TensorFlow model.
+async fn egg_prediction(
+    state: State<AppState>,
+    Json(json): Json<Value>,
+) -> Result<Json<PredictionResponse>, StatusCode> {
+    let df = vec_json_to_dataframe(json).or(Err(StatusCode::BAD_REQUEST))?;
+
+    let input_tensor = df_to_tensor(df).or(Err(StatusCode::BAD_REQUEST))?;
+
+    // Make the prediction using the loaded TensorFlow model
+    let prediction = predict_motion(
+        &state.session,
+        &state.graph,
+        &input_tensor,
+        &state.input_op,
+        &state.output_op,
+    )
+    .or(Err(StatusCode::BAD_REQUEST))?;
+
+    println!("{:?}", prediction);
+
+    // Add the prediction to the shared state
+    state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .push(prediction.into());
+
+    // Get the current count of predictions
+    let prediction_count = state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .len();
+
+    Ok(PredictionResponse {
+        prediction_label: prediction.into(),
+        prediction_count,
+    }
+    .into())
 }
 
 /// Retrieves the last prediction made by the application.
@@ -236,7 +570,7 @@ async fn post_predict(
 ) -> Result<Json<PredictionResponse>, StatusCode> {
     let df = json_to_dataframe(json).or(Err(StatusCode::BAD_REQUEST))?;
 
-    let input_tensor = df_to_tensor(&df).or(Err(StatusCode::BAD_REQUEST))?;
+    let input_tensor = df_to_tensor(df).or(Err(StatusCode::BAD_REQUEST))?;
 
     // Make the prediction using the loaded TensorFlow model
     let prediction = predict_motion(
@@ -299,7 +633,9 @@ fn json_to_dataframe(data: Value) -> Result<DataFrame> {
             continue;
         }
 
-        // Construct the column key eg: c1, c2, c3
+        // c0: Sample count index
+        // c30: Time stamp
+        // Iterate over column indices from c1 to c31 (excluding c30)
         let column_key = format!("c{}", i);
         let value = map
             .get(&column_key)
@@ -323,6 +659,58 @@ fn json_to_dataframe(data: Value) -> Result<DataFrame> {
     Ok(DataFrame::new(columns)?)
 }
 
+/// Converts a JSON value containing vector data to a Polars DataFrame.
+///
+/// This function takes a JSON value that represents a dataset with vector data
+/// and converts it to a Polars DataFrame. The JSON value should have a specific
+/// format where each column is represented by a key-value pair, with the key
+/// being "c{i}" (where i is the column index 0-31) and the value being an array of
+/// floating-point numbers.
+///
+/// # Arguments
+///
+/// * `json` - The JSON value containing the vector data to be converted to a DataFrame.
+///
+/// # Returns
+///
+/// * `Result<DataFrame>` - A `Result` containing the converted DataFrame on success,
+///   or an `anyhow::Error` if the JSON format is invalid or a required column is missing.
+fn vec_json_to_dataframe(json: Value) -> Result<DataFrame> {
+    let mut columns = vec![];
+
+    let Value::Object(map) = json else {
+        return Err(anyhow!("Invalid json format"));
+    };
+
+    // c0: Sample count index
+    // c30: Time stamp
+    // Iterate over column indices from c1 to c31 (excluding c30)
+    for i in 1..32 {
+        if i == 30 {
+            continue;
+        }
+        let column_key = format!("c{}", i);
+        let value = map
+            .get(&column_key)
+            .ok_or(anyhow!("missing column: {}", column_key))?;
+
+        let Value::Array(arr) = value else {
+            return Err(anyhow!("actual value {:?}", value));
+        };
+
+        let mut row = vec![];
+
+        // Convert each value in the array to f64 and add it to the row
+        for val in arr {
+            row.push(val.as_f64())
+        }
+
+        let series = Series::new(&column_key, row);
+        columns.push(series);
+    }
+    Ok(DataFrame::new(columns)?)
+}
+
 /// Converts a Polars DataFrame to a TensorFlow Tensor.
 ///
 /// This function takes a reference to a Polars DataFrame and converts it to a TensorFlow Tensor.
@@ -339,7 +727,7 @@ fn json_to_dataframe(data: Value) -> Result<DataFrame> {
 ///
 /// * `Result<Tensor<f32>>` - A `Result` containing the converted Tensor on success,
 ///   or an `anyhow::Error` if the DataFrame contains non-Float64 values.
-fn df_to_tensor(df: &DataFrame) -> Result<Tensor<f32>> {
+fn df_to_tensor(df: DataFrame) -> Result<Tensor<f32>> {
     let num_rows = df.height();
     let num_cols = df.width();
 
@@ -416,7 +804,7 @@ fn predict_motion(
 
     // alternative method to determine movement checks each chuck
     // selects the most commanly accuring index
-    // generally the index is always across all
+    // generally the index is always the same across all chunks
     /* let mut indexes = vec![];
     for row in result_tensor.chunks(6) {
         let index = row
