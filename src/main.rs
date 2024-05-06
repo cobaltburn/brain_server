@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use once_cell::sync::Lazy;
 use polars::{datatypes::AnyValue, frame::DataFrame, prelude::NamedFrom, series::Series};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,7 +13,7 @@ use std::{
     env::{self, current_dir},
     sync::{Arc, Mutex},
 };
-use tensorflow::{Graph, Session, SessionOptions, SessionRunArgs, Tensor};
+use tensorflow::{Graph, SavedModelBundle, SessionOptions, SessionRunArgs, Tensor};
 
 /// Represents the possible movements of the drone.
 ///
@@ -88,11 +89,9 @@ impl Into<String> for Movements {
 /// * `output_op` - The name of the output operation in the TensorFlow graph.
 #[derive(Clone, Debug)]
 struct AppState {
-    session: Arc<Session>,
+    session: Arc<SavedModelBundle>,
     graph: Arc<Graph>,
     perdictions: Arc<Mutex<Vec<String>>>,
-    input_op: String,
-    output_op: String,
 }
 
 /// Represents the response structure for a prediction request.
@@ -111,16 +110,21 @@ struct PredictionResponse {
 }
 
 /// The default address and port for the server to listen on.
-const ADDR: &str = "127.0.0.1:5000";
+const ADDRESS: Lazy<String> =
+    Lazy::new(|| env::var("PREDITION_SERVER_ADDRESS").unwrap_or("0.0.0.0:5000".into()));
 
 /// The default path to the TensorFlow SavedModel directory.
-const MODEL: &str = "model";
+const MODEL: Lazy<String> = Lazy::new(|| env::var("PREDICTION_MODEL").unwrap_or("model.pb".into()));
 
 /// The default name of the input operation in the TensorFlow graph.
-const INPUT_OPERATION_NAME: &str = "serving_default_input";
+const INPUT_OPERATION_NAME: Lazy<String> = Lazy::new(|| {
+    env::var("PREDICTION_INPUT_OPERATION_NAME").unwrap_or("serving_default_input".into())
+});
 
 /// The default name of the output operation in the TensorFlow graph.
-const OUTPUT_OPERATION_NAME: &str = "StatefulPartitionedCall";
+const OUTPUT_OPERATION_NAME: Lazy<String> = Lazy::new(|| {
+    env::var("PREDICTION_OUTPUT_OPERATION_NAME").unwrap_or("StatefulPartitionedCall".into())
+});
 
 /// # Environment Variables
 ///
@@ -136,29 +140,23 @@ const OUTPUT_OPERATION_NAME: &str = "StatefulPartitionedCall";
 #[tokio::main]
 async fn main() -> Result<()> {
     // Read the configuration values from environment variables, or use default values
-    let model = env::var("PREDICTION_MODEL").unwrap_or(MODEL.into());
-    let address = env::var("PREDITION_SERVER_ADDRESS").unwrap_or(ADDR.into());
-    let input_op =
-        env::var("PREDICTION_INPUT_OPERATION_NAME").unwrap_or(INPUT_OPERATION_NAME.into());
-    let output_op =
-        env::var("PREDICTION_INPUT_OPERATION_NAME").unwrap_or(OUTPUT_OPERATION_NAME.into());
+    // env::set_var("TF_CPP_MIN_LOG_LEVEL", "2"); // Ignore warning messages
 
     // Import the TensorFlow model and get the session and graph
-    let (session, graph) = import_tensor(model)?;
+    let (session, graph) = import_tensor(MODEL.to_string())?;
 
     // Create application state
     let state = AppState {
         session: Arc::new(session),
         graph: Arc::new(graph),
         perdictions: Arc::new(Mutex::new(vec![])),
-        input_op,
-        output_op,
     };
 
     // Create the application routes
     let app = Router::new()
         .route("/eegrandomforestprediction", post(post_predict))
         .route("/prediction", post(egg_prediction))
+        .route("/time_prediction", post(egg_timestamp_prediction))
         .route("/lastpredition", get(last_prediction))
         .route("/takeoff", post(takeoff))
         .route("/land", post(land))
@@ -170,7 +168,7 @@ async fn main() -> Result<()> {
         .with_state(state);
 
     // Create a TCP listener and bind it to the specified address
-    let listener = tokio::net::TcpListener::bind(address).await?;
+    let listener = tokio::net::TcpListener::bind(ADDRESS.to_string()).await?;
     println!("listening on http://{}", listener.local_addr()?);
 
     // Start the server and handle incoming requests
@@ -479,14 +477,8 @@ async fn egg_prediction(
     let input_tensor = df_to_tensor(df).or(Err(StatusCode::BAD_REQUEST))?;
 
     // Make the prediction using the loaded TensorFlow model
-    let prediction = predict_motion(
-        &state.session,
-        &state.graph,
-        &input_tensor,
-        &state.input_op,
-        &state.output_op,
-    )
-    .or(Err(StatusCode::BAD_REQUEST))?;
+    let prediction = predict_motion(&state.session, &state.graph, &input_tensor)
+        .or(Err(StatusCode::BAD_REQUEST))?;
 
     println!("{:?}", prediction);
 
@@ -511,6 +503,40 @@ async fn egg_prediction(
     .into())
 }
 
+async fn egg_timestamp_prediction(
+    state: State<AppState>,
+    Json(json): Json<Value>,
+) -> Result<Json<PredictionResponse>, StatusCode> {
+    let df = vec_json_to_dataframe_timestamp(json).or(Err(StatusCode::BAD_REQUEST))?;
+
+    let input_tensor = df_to_tensor(df).or(Err(StatusCode::BAD_REQUEST))?;
+
+    // Make the prediction using the loaded TensorFlow model
+    let prediction = predict_motion(&state.session, &state.graph, &input_tensor)
+        .or(Err(StatusCode::BAD_REQUEST))?;
+
+    println!("{:?}", prediction);
+
+    // Add the prediction to the shared state
+    state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .push(prediction.into());
+
+    // Get the current count of predictions
+    let prediction_count = state
+        .perdictions
+        .lock()
+        .or(Err(StatusCode::BAD_REQUEST))?
+        .len();
+
+    Ok(PredictionResponse {
+        prediction_label: prediction.into(),
+        prediction_count,
+    }
+    .into())
+}
 /// Retrieves the last prediction made by the application.
 ///
 /// This function is an asynchronous handler for the "/lastpredition" route.
@@ -568,19 +594,15 @@ async fn post_predict(
     state: State<AppState>,
     Json(json): Json<Value>,
 ) -> Result<Json<PredictionResponse>, StatusCode> {
-    let df = json_to_dataframe(json).or(Err(StatusCode::BAD_REQUEST))?;
+    let df = json_to_dataframe(json).unwrap();
+    // .or(Err(StatusCode::BAD_REQUEST))?;
 
-    let input_tensor = df_to_tensor(df).or(Err(StatusCode::BAD_REQUEST))?;
+    let input_tensor = df_to_tensor(df).unwrap();
+    // .or(Err(StatusCode::BAD_REQUEST))?;
 
     // Make the prediction using the loaded TensorFlow model
-    let prediction = predict_motion(
-        &state.session,
-        &state.graph,
-        &input_tensor,
-        &state.input_op,
-        &state.output_op,
-    )
-    .or(Err(StatusCode::BAD_REQUEST))?;
+    let prediction = predict_motion(&state.session, &state.graph, &input_tensor).unwrap();
+    // .or(Err(StatusCode::BAD_REQUEST))?;
 
     println!("{:?}", prediction);
 
@@ -711,6 +733,39 @@ fn vec_json_to_dataframe(json: Value) -> Result<DataFrame> {
     Ok(DataFrame::new(columns)?)
 }
 
+fn vec_json_to_dataframe_timestamp(json: Value) -> Result<DataFrame> {
+    let mut columns = vec![];
+
+    let Value::Object(map) = json else {
+        return Err(anyhow!("Invalid json format"));
+    };
+
+    // c0: Sample count index
+    // c30: Time stamp
+    // Iterate over column indices from c1 to c31 (excluding c30)
+    for i in 1..32 {
+        let column_key = format!("c{}", i);
+        let value = map
+            .get(&column_key)
+            .ok_or(anyhow!("missing column: {}", column_key))?;
+
+        let Value::Array(arr) = value else {
+            return Err(anyhow!("actual value {:?}", value));
+        };
+
+        let mut row = vec![];
+
+        // Convert each value in the array to f64 and add it to the row
+        for val in arr {
+            row.push(val.as_f64())
+        }
+
+        let series = Series::new(&column_key, row);
+        columns.push(series);
+    }
+    Ok(DataFrame::new(columns)?)
+}
+
 /// Converts a Polars DataFrame to a TensorFlow Tensor.
 ///
 /// This function takes a reference to a Polars DataFrame and converts it to a TensorFlow Tensor.
@@ -728,23 +783,31 @@ fn vec_json_to_dataframe(json: Value) -> Result<DataFrame> {
 /// * `Result<Tensor<f32>>` - A `Result` containing the converted Tensor on success,
 ///   or an `anyhow::Error` if the DataFrame contains non-Float64 values.
 fn df_to_tensor(df: DataFrame) -> Result<Tensor<f32>> {
-    let num_rows = df.height();
+    let steps = 200;
+    let num_rows = df.height() - (df.height() % steps);
     let num_cols = df.width();
 
     let mut data = Vec::with_capacity(num_rows * num_cols);
     let mut i = 0;
 
     while let Ok(row) = df.get_row(i) {
+        if i >= num_rows {
+            break;
+        }
         for val in row.0 {
             let AnyValue::Float64(val) = val else {
-                return Err(anyhow!("how is this not a fucking float {}", val));
+                return Err(anyhow!("how is this not a float {}", val));
             };
             data.push(val as f32);
         }
         i += 1;
     }
 
-    Ok(Tensor::new(&[num_rows as u64, num_cols as u64]).with_values(&data)?)
+    Ok(
+        Tensor::new(&[(num_rows / steps) as u64, steps as u64, num_cols as u64])
+            .with_values(&data)
+            .unwrap(),
+    )
 }
 
 /// Predicts the motion based on the input tensor using a TensorFlow model.
@@ -758,54 +821,36 @@ fn df_to_tensor(df: DataFrame) -> Result<Tensor<f32>> {
 /// * `session` - A reference to the TensorFlow Session.
 /// * `graph` - A reference to the TensorFlow Graph.
 /// * `input_tensor` - A reference to the input tensor.
-/// * `input_op` - The name of the input operation in the TensorFlow graph.
-/// * `output_op` - The name of the output operation in the TensorFlow graph.
 ///
 /// # Returns
 ///
 /// * `Result<Movements>` - A `Result` containing the predicted motion as a `Movements` enum variant on success,
 ///   or an `anyhow::Error` if an error occurs during the prediction process.
 fn predict_motion(
-    session: &Session,
+    bundle: &SavedModelBundle,
     graph: &Graph,
     input_tensor: &Tensor<f32>,
-    input_op: &str,
-    output_op: &str,
 ) -> Result<Movements> {
     let mut args = SessionRunArgs::new();
 
     // Get the input operation from the graph
-    let in_op = graph.operation_by_name_required(input_op)?;
+    let session = &bundle.session;
+
+    let in_op = graph
+        .operation_by_name_required(&INPUT_OPERATION_NAME)
+        .unwrap();
     args.add_feed(&in_op, 0, input_tensor);
 
-    // Get the output operation from the graph
-    let out_op = graph.operation_by_name_required(output_op)?;
+    let out_op = graph
+        .operation_by_name_required(&OUTPUT_OPERATION_NAME)
+        .unwrap();
     let result_token = args.request_fetch(&out_op, 0);
 
     session.run(&mut args)?;
 
-    let result_tensor = args.fetch::<f32>(result_token)?;
+    let result_tensor = args.fetch::<f32>(result_token).unwrap();
 
-    // Get the first row from the result tensor
-    let row = result_tensor
-        .chunks(6)
-        .next()
-        .ok_or(anyhow!("insufficent number of values found in tensor"))?;
-
-    // Find the index with the maximum value in the row
-    let prediction = row
-        .iter()
-        .enumerate()
-        .max_by(|(_, p1), (_, p2)| p1.partial_cmp(p2).unwrap())
-        .map(|(i, _)| i)
-        .ok_or(anyhow!("no predicted index found"))?;
-
-    Movements::try_from(prediction).or(Err(anyhow!("{:?}", prediction)))
-
-    // alternative method to determine movement checks each chuck
-    // selects the most commanly accuring index
-    // generally the index is always the same across all chunks
-    /* let mut indexes = vec![];
+    let mut indexes = vec![];
     for row in result_tensor.chunks(6) {
         let index = row
             .iter()
@@ -815,16 +860,15 @@ fn predict_motion(
             .ok_or(anyhow!("no predicted index found"))?;
         indexes.push(index);
     }
-    let mut counts = HashMap::with_capacity(6);
+    let mut counts = std::collections::HashMap::with_capacity(6);
     indexes.into_iter().for_each(|i| {
         let _ = counts.entry(i).and_modify(|e| *e += 1).or_insert(1);
     });
-    println!("{:?}", counts);
     let (prediction, _) = counts
         .into_iter()
         .max()
         .ok_or(anyhow!("no valid indexes found"))?;
-    println!("{}", prediction); */
+    Movements::try_from(prediction).or(Err(anyhow!("{:?}", prediction)))
 }
 
 /// Imports a TensorFlow SavedModel and returns the Session and Graph.
@@ -841,7 +885,7 @@ fn predict_motion(
 ///
 /// * `Result<(Session, Graph)>` - A `Result` containing a tuple of the loaded Session and Graph on success,
 ///   or an error if the model fails to load.
-fn import_tensor(path: String) -> Result<(Session, Graph)> {
+fn import_tensor(path: String) -> Result<(SavedModelBundle, Graph)> {
     // Get the current directory and append path to model
     let mut model_path = current_dir().unwrap();
     model_path.push(path);
@@ -853,8 +897,33 @@ fn import_tensor(path: String) -> Result<(Session, Graph)> {
         &["serve"],
         &mut graph,
         model_path,
-    )?
-    .session;
+    )?;
 
     Ok((session, graph))
+}
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+
+    #[test]
+    fn open_tensor() {
+        let mut model_path = current_dir().unwrap();
+        model_path.push("model.pb");
+
+        let mut graph = Graph::new();
+
+        let session = tensorflow::SavedModelBundle::load(
+            &SessionOptions::new(),
+            &["serve"],
+            &mut graph,
+            model_path,
+        )
+        .unwrap();
+        println!(
+            "{:?}",
+            session.meta_graph_def().get_signature("serving_default")
+        );
+    }
 }
